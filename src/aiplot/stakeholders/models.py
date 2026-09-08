@@ -10,6 +10,13 @@ from pydantic import Field
 from aiplot.visualization.models import StrictModel
 
 
+class PendingClarification(StrictModel):
+    original_request: str = Field(min_length=1, max_length=4_000)
+    tool: Literal["text_to_sql", "create_pipeline"]
+    questions: list[str] = Field(min_length=1, max_length=6)
+    capability_context: str = Field(min_length=1, max_length=2_000)
+
+
 class StakeholderMessage(StrictModel):
     id: str = Field(pattern=r"^[a-f0-9]{32}$")
     role: Literal["user", "assistant"]
@@ -30,6 +37,7 @@ class StakeholderThread(StrictModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     messages: list[StakeholderMessage] = Field(default_factory=list, max_length=100)
+    pending_clarification: PendingClarification | None = None
 
 
 class CreateStakeholderThread(StrictModel):
@@ -51,5 +59,7 @@ class StakeholderChatResponse(StrictModel):
     assistant_message: StakeholderMessage
     analysis: dict[str, Any]
     tool: Literal["text_to_sql", "create_pipeline"]
-    tool_status: Literal["completed", "awaiting_human_approval", "failed"]
+    tool_status: Literal["completed", "awaiting_clarification", "awaiting_human_approval", "failed"]
     approval_url: str | None = None
+    clarification_questions: list[str] = Field(default_factory=list)
+    generated_question: str | None = None

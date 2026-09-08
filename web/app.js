@@ -125,6 +125,12 @@ async function submitAnalysis(event) {
     const body = await response.json();
     if (!response.ok) throw new Error(body.detail || "Aiplot could not process the request.");
     if (state.activeThread) { state.activeThread = body.thread; const index = state.threads.findIndex((item) => item.id === body.thread.id); if (index >= 0) state.threads.splice(index, 1); state.threads.unshift(body.thread); renderThreadList(); renderConversation(body.thread.messages); $("#questionInput").value = ""; }
+    if (state.activeThread && body.tool_status === "awaiting_clarification") {
+      $("#questionInput").placeholder = "Reply with your choices for the questions above";
+      $("#questionInput").focus();
+      return;
+    }
+    $("#questionInput").placeholder = "e.g. Show monthly revenue by customer segment";
     const analysis = state.activeThread ? body.analysis : body;
     if (analysis.intent === "dashboard") {
       if (!analysis.dashboard) throw new Error(analysis.message || "The dashboard could not be planned.");

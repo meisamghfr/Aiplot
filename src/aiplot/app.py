@@ -27,6 +27,11 @@ from aiplot.persistence.models import (
 )
 from aiplot.persistence.service import PersistenceService
 from aiplot.router import RequestIntent, route_request
+from aiplot.stakeholders.clarification import (
+    clarification_for,
+    clarification_message,
+    generated_question,
+)
 from aiplot.stakeholders.models import (
     CreateStakeholderThread,
     StakeholderChatRequest,
@@ -279,9 +284,35 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         stakeholder_store.append(thread_id, "user", request.message)
-        tool = select_tool(request.message)
+        generated: str | None = None
+        if thread.pending_clarification is not None:
+            pending = thread.pending_clarification
+            tool = pending.tool
+            generated = generated_question(pending, request.message)
+            stakeholder_store.set_pending(thread_id, None)
+        else:
+            tool = select_tool(request.message)
+            try:
+                capabilities = await text2sql.analytics_capabilities(thread.db_id)
+            except TextToSQLError as exc:
+                raise HTTPException(status_code=502, detail=str(exc)) from exc
+            clarification = clarification_for(request.message, capabilities, tool)
+            if clarification is not None:
+                stakeholder_store.set_pending(thread_id, clarification)
+                assistant = stakeholder_store.append(
+                    thread_id, "assistant", clarification_message(clarification)
+                )
+                return StakeholderChatResponse(
+                    thread=stakeholder_store.get(thread_id),
+                    assistant_message=assistant,
+                    analysis={},
+                    tool=tool,
+                    tool_status="awaiting_clarification",
+                    clarification_questions=clarification.questions,
+                )
+        tool_input = generated or request.message
         effective_request = (
-            pipeline_request(request.message) if tool == "create_pipeline" else request.message
+            pipeline_request(tool_input) if tool == "create_pipeline" else tool_input
         )
         analysis = await analyze(
             AnalyzeRequest(
@@ -319,6 +350,7 @@ def create_app(
                 if analysis.persistence_plan is not None
                 else None
             ),
+            generated_question=effective_request,
         )
 
     return app

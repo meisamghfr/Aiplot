@@ -106,6 +106,8 @@ A message enters the same single-analysis or dashboard route as a direct request
 
 The conversation runtime chooses only from two tools. `text_to_sql` executes governed read-only analysis. `create_pipeline` prepares a persistent dashboard and transformation plan, then stops with `awaiting_human_approval`. Only the separate approval request can invoke dbt mutation.
 
+For an underspecified request such as “plot the number of clients,” the agent first reads capability metadata—not warehouse rows—and pauses with `awaiting_clarification`. It maps business terms to available entities, offers only existing date fields and dimensions, and asks for the date window, time grain, and optional breakdown. The stakeholder's reply is combined with the original intent into the analytical question passed to the Text-to-SQL tool.
+
 ## Included PostgreSQL warehouse
 
 `warehouse/bootstrap.sql` creates an isolated `aiplot_warehouse` layout with `raw`, `staging`, and `analytics` schemas. The repeatable demo contains 120 customers and 1,500 orders. The dbt project builds:

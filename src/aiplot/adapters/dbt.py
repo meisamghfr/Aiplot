@@ -251,9 +251,7 @@ def _render_sources(spec: TransformationSpec) -> str:
     lines = ["version: 2", "sources:"]
     source_schema = os.environ.get("AIPLOT_DBT_SOURCE_SCHEMA", "raw")
     for source_name, relations in grouped.items():
-        lines.extend(
-            [f"  - name: {source_name}", f"    schema: {source_schema}", "    tables:"]
-        )
+        lines.extend([f"  - name: {source_name}", f"    schema: {source_schema}", "    tables:"])
         lines.extend(f"      - name: {relation}" for relation in sorted(set(relations)))
     return "\n".join(lines) + "\n"
 

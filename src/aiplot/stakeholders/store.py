@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from aiplot.stakeholders.models import (
     CreateStakeholderThread,
+    PendingClarification,
     StakeholderMessage,
     StakeholderThread,
 )
@@ -69,6 +70,16 @@ class StakeholderStore:
         temporary = path.with_suffix(".json.tmp")
         temporary.write_text(thread.model_dump_json(indent=2) + "\n", encoding="utf-8")
         temporary.replace(path)
+
+    def set_pending(
+        self, thread_id: str, pending: PendingClarification | None
+    ) -> StakeholderThread:
+        thread = self.get(thread_id)
+        updated = thread.model_copy(
+            update={"pending_clarification": pending, "updated_at": datetime.now(UTC)}
+        )
+        self.save(updated)
+        return updated
 
     def _path(self, thread_id: str) -> Path:
         if len(thread_id) != 32 or any(char not in "0123456789abcdef" for char in thread_id):

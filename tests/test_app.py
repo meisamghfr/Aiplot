@@ -198,6 +198,42 @@ def test_pipeline_tool_stops_for_human_approval(tmp_path: Path, monkeypatch: Any
     assert not (tmp_path / "dbt" / "models").exists()
 
 
+def test_vague_plot_is_clarified_before_text_to_sql(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("AIPLOT_STATE_DIR", str(tmp_path))
+    fake = FakeTextToSQLClient(accepted_response())
+    client = TestClient(create_app(fake))  # type: ignore[arg-type]
+    thread = client.post(
+        "/api/stakeholders/threads",
+        json={
+            "stakeholder_name": "Maya",
+            "stakeholder_role": "Commercial lead",
+            "objective": "Understand the client base",
+            "db_id": "business",
+            "provider": "ollama",
+            "model": "local",
+        },
+    ).json()
+
+    clarification = client.post(
+        f"/api/stakeholders/threads/{thread['id']}/messages",
+        json={"message": "I need a plot for number of clients"},
+    ).json()
+
+    assert clarification["tool_status"] == "awaiting_clarification"
+    assert clarification["analysis"] == {}
+    assert len(clarification["clarification_questions"]) >= 3
+    assert fake.chat_calls == 0
+
+    result = client.post(
+        f"/api/stakeholders/threads/{thread['id']}/messages",
+        json={"message": "Use customers, the last 12 months, monthly, by segment."},
+    ).json()
+
+    assert result["tool_status"] == "completed"
+    assert "Use these stakeholder clarifications" in result["generated_question"]
+    assert fake.chat_calls == 1
+
+
 def test_dashboard_mode_performs_multiple_text2sql_calls() -> None:
     fake = FakeTextToSQLClient(accepted_response())
     body = request_body() | {"question": "Build a business performance dashboard"}
