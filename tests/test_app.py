@@ -17,6 +17,7 @@ class FakeTextToSQLClient:
         self.response = response
         self.error = error
         self.chat_calls = 0
+        self.chat_payloads: list[dict[str, Any]] = []
 
     async def databases(self) -> list[dict[str, Any]]:
         return [{"db_id": "business", "dialect": "postgres", "configured": True}]
@@ -49,6 +50,7 @@ class FakeTextToSQLClient:
 
     async def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.chat_calls += 1
+        self.chat_payloads.append(payload)
         if self.error:
             raise self.error
         assert payload["execute"] is True
@@ -244,3 +246,26 @@ def test_dashboard_mode_performs_multiple_text2sql_calls() -> None:
     assert response.json()["intent"] == "dashboard"
     assert response.json()["dashboard"]["unique_query_count"] > 1
     assert fake.chat_calls == response.json()["dashboard"]["unique_query_count"]
+
+
+def test_groq_dashboard_routes_to_configured_higher_capacity_provider() -> None:
+    class MultiProviderFake(FakeTextToSQLClient):
+        async def models(self) -> list[dict[str, Any]]:
+            return [
+                {"provider": "groq", "model": "qwen/qwen3.6-27b", "configured": True},
+                {"provider": "justdowork", "model": "gpt-5.6-sol", "configured": True},
+            ]
+
+    fake = MultiProviderFake(accepted_response())
+    body = request_body() | {
+        "question": "Build a business performance dashboard",
+        "provider": "groq",
+        "model": "qwen/qwen3.6-27b",
+    }
+
+    response = TestClient(create_app(fake)).post("/api/analyze", json=body)  # type: ignore[arg-type]
+
+    assert response.json()["provider_used"] == "justdowork"
+    assert response.json()["model_used"] == "gpt-5.6-sol"
+    assert "1,000 output-token" in response.json()["provider_notice"]
+    assert all(item["provider"] == "justdowork" for item in fake.chat_payloads)

@@ -66,6 +66,9 @@ class AnalyzeResponse(StrictModel):
     message: str
     error_type: str | None = None
     raw_status: dict[str, Any] = Field(default_factory=dict)
+    provider_used: str | None = None
+    model_used: str | None = None
+    provider_notice: str | None = None
 
 
 def create_app(
@@ -121,12 +124,15 @@ def create_app(
                     intent="dashboard", message=str(exc), error_type="capability_discovery_failure"
                 )
             try:
+                provider, model, provider_notice = await _dashboard_model(
+                    text2sql, request.provider, request.model
+                )
                 dashboard = await dashboard_service.build(
                     request.question,
                     capabilities,
                     db_id=request.db_id,
-                    provider=request.provider,
-                    model=request.model,
+                    provider=provider,
+                    model=model,
                     context_mode=request.context_mode,
                     context_provider=request.context_provider,
                     context_model=request.context_model,
@@ -155,6 +161,9 @@ def create_app(
                 persistence=persistence,
                 dashboard=dashboard,
                 persistence_plan=persistence_plan,
+                provider_used=provider,
+                model_used=model,
+                provider_notice=provider_notice,
                 message=(
                     f"Dashboard built with {accepted} available widgets. "
                     "Review and approve the persistence plan before dbt changes are made."
@@ -218,6 +227,8 @@ def create_app(
             visualization=visualization,
             message=str(response.get("message") or "Query completed."),
             raw_status=_status(response, generation),
+            provider_used=request.provider,
+            model_used=request.model,
         )
 
     @app.get("/api/persistence/plans/{plan_id}", response_model=PersistencePlan)
@@ -393,6 +404,34 @@ def _stakeholder_answer(analysis: AnalyzeResponse) -> str:
             f"{'row' if analysis.result.row_count == 1 else 'rows'}."
         )
     return analysis.message
+
+
+async def _dashboard_model(
+    text2sql: TextToSQLClient, provider: str, model: str
+) -> tuple[str, str, str | None]:
+    if provider != "groq":
+        return provider, model, None
+    try:
+        models = await text2sql.models()
+    except TextToSQLError:
+        return provider, model, None
+    fallback = next(
+        (
+            item
+            for item in models
+            if item.get("provider") == "justdowork" and item.get("configured") is True
+        ),
+        None,
+    )
+    fallback_model = fallback.get("model") if fallback else None
+    if not isinstance(fallback_model, str):
+        return provider, model, None
+    return (
+        "justdowork",
+        fallback_model,
+        f"Dashboard execution used {fallback_model} because the configured Groq tier has a "
+        "1,000 output-token-per-minute limit.",
+    )
 
 
 app = create_app()

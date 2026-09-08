@@ -178,7 +178,9 @@ function renderAgentDashboard() {
   $("#workspace").hidden = true;
   $("#agentDashboard").hidden = false;
   $("#agentDashboardTitle").textContent = spec.title;
-  $("#agentDashboardObjective").textContent = spec.objective;
+  $("#agentDashboardObjective").textContent = state.response.provider_notice
+    ? `${spec.objective} ${state.response.provider_notice}`
+    : spec.objective;
   $("#dashboardQueryCount").textContent = `${execution.unique_query_count} of ${execution.query_budget} query budget used`;
   $("#dashboardPlanList").replaceChildren(...spec.widgets.map((widget) => {
     const item = document.createElement("li");
