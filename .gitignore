@@ -9,3 +9,4 @@ __pycache__/
 dbt_analytics/target/
 dbt_analytics/logs/
 dbt_analytics/dbt_packages/
+dbt_analytics/.user.yml
