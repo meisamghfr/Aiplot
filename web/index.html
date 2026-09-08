@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Turn governed Text-to-SQL results into interactive Plotly analysis.">
+    <title>AI Plot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="AI Plot home">
+          <span class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </span>
+          <span>AI Plot</span>
+        </a>
+        <div class="service-status" id="serviceStatus">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>Checking engine</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero hero-compact">
+          <p class="eyebrow">Governed analytics workspace</p>
+          <h1>Analytics conversations<br><span>that become durable decisions.</span></h1>
+          <p class="hero-copy">Chat with stakeholder context, validate every analysis, and promote approved dashboards into dbt marts and Power BI.</p>
+        </section>
+
+        <section class="stakeholder-chat" aria-labelledby="stakeholderTitle">
+          <aside class="thread-sidebar">
+            <div class="thread-sidebar-head"><div><p class="section-kicker">Stakeholders</p><h2 id="stakeholderTitle">Conversations</h2></div><button type="button" id="newThreadButton">New</button></div>
+            <div id="threadList" class="thread-list"><p class="thread-empty">No conversations yet.</p></div>
+          </aside>
+          <div class="conversation-panel">
+            <div class="conversation-head"><div><strong id="conversationName">Direct analysis</strong><span id="conversationContext">Start a stakeholder thread or ask a one-off question below.</span></div><button type="button" id="closeThreadButton" hidden>Exit thread</button></div>
+            <div id="conversationMessages" class="conversation-messages" aria-live="polite"><div class="conversation-placeholder">Create a conversation to preserve the stakeholder, objective, and analytical history.</div></div>
+          </div>
+        </section>
+
+        <dialog id="threadDialog">
+          <form id="threadForm" method="dialog">
+            <div class="dialog-head"><div><p class="section-kicker">New conversation</p><h2>Stakeholder context</h2></div><button type="button" id="cancelThreadButton" aria-label="Close">×</button></div>
+            <label for="stakeholderName">Name</label><input id="stakeholderName" maxlength="120" required>
+            <label for="stakeholderRole">Role</label><input id="stakeholderRole" maxlength="120" placeholder="e.g. Head of Growth" required>
+            <label for="stakeholderObjective">Decision objective</label><textarea id="stakeholderObjective" rows="3" maxlength="500" placeholder="What decision should this conversation support?" required></textarea>
+            <button class="dialog-submit" type="submit">Create conversation</button>
+          </form>
+        </dialog>
+
+        <section class="query-card" aria-labelledby="queryTitle">
+          <div class="query-card-head">
+            <div>
+              <p class="section-kicker" id="composerKicker">New analysis</p>
+              <h2 id="queryTitle">What do you want to understand?</h2>
+            </div>
+            <div class="source-control">
+              <label for="databaseSelect">Data source</label>
+              <select id="databaseSelect" disabled><option>Loading…</option></select>
+            </div>
+          </div>
+          <form id="analyzeForm">
+            <label class="sr-only" for="questionInput">Analytical question</label>
+            <div class="question-row">
+              <textarea id="questionInput" rows="2" maxlength="4000" placeholder="e.g. Show monthly revenue by customer segment" required></textarea>
+              <button class="analyze-button" type="submit" disabled>
+                <span id="submitLabel">Analyze</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+            </div>
+          </form>
+          <div class="advanced-row">
+            <label for="modelSelect">SQL model</label>
+            <select id="modelSelect" disabled><option>Loading…</option></select>
+            <label for="contextSelect">Context</label>
+            <select id="contextSelect">
+              <option value="retrieval">Hybrid retrieval</option>
+              <option value="model1">Model 1 selector</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="loading-panel" id="loadingPanel" hidden aria-live="polite">
+          <div class="loading-orbit" aria-hidden="true"><span></span></div>
+          <div><strong>Building your analysis</strong><p>Generating, validating, and executing read-only SQL…</p></div>
+        </section>
+
+        <section class="error-panel" id="errorPanel" hidden role="alert">
+          <span class="error-icon" aria-hidden="true">!</span>
+          <div><strong>Analysis could not be completed</strong><p id="errorMessage"></p></div>
+        </section>
+
+        <section class="workspace" id="workspace" hidden aria-live="polite">
+          <div class="result-header">
+            <div>
+              <div class="result-meta"><span class="success-dot"></span><span id="resultStatus">Query accepted</span><span class="meta-divider"></span><span id="rowCount"></span></div>
+              <h2 id="resultQuestion"></h2>
+              <p id="resultMessage" class="result-message" hidden></p>
+            </div>
+            <button type="button" class="new-analysis" id="newAnalysisButton">New analysis</button>
+          </div>
+
+          <details class="sql-disclosure">
+            <summary><span>Accepted SQL</span><span class="sql-hint">Validated &amp; read-only</span></summary>
+            <div class="sql-code-wrap">
+              <button type="button" id="copySqlButton">Copy SQL</button>
+              <pre><code id="sqlCode"></code></pre>
+            </div>
+          </details>
+
+          <nav class="view-tabs" aria-label="Result views">
+            <button type="button" data-view="table">Table</button>
+            <button type="button" data-view="chart" class="active" aria-current="page">Chart</button>
+            <button type="button" data-view="dashboard">Dashboard</button>
+          </nav>
+
+          <div class="view-panel" id="tableView" hidden>
+            <div class="table-wrap"><table id="resultTable"></table></div>
+          </div>
+
+          <div class="view-panel chart-layout" id="chartView">
+            <section class="chart-stage">
+              <div class="chart-heading"><div><p class="section-kicker">Visualization</p><h3 id="chartTitle">Analysis</h3></div><span id="sampleBadge" class="sample-badge" hidden>Sampled</span></div>
+              <div id="chartEmpty" class="empty-state" hidden></div>
+              <div id="plotlyChart" class="plot" role="img" aria-label="Interactive result chart"></div>
+            </section>
+            <aside class="chart-settings" aria-labelledby="settingsTitle">
+              <p class="section-kicker">Controls</p>
+              <h3 id="settingsTitle">Chart settings</h3>
+              <label for="chartTypeSelect">Chart type</label>
+              <select id="chartTypeSelect"></select>
+              <label for="xAxisSelect">X axis / labels</label>
+              <select id="xAxisSelect"></select>
+              <label for="yAxisSelect">Y axis / values</label>
+              <select id="yAxisSelect"></select>
+              <label for="colorSelect">Group / color</label>
+              <select id="colorSelect"></select>
+              <button type="button" class="reset-chart" id="resetChartButton">Reset to automatic</button>
+              <p class="settings-note">These controls use the returned data only. SQL is not regenerated.</p>
+            </aside>
+          </div>
+
+          <div class="view-panel" id="dashboardView" hidden>
+            <div class="dashboard-head"><div><p class="section-kicker">Dashboard</p><h3 id="dashboardTitle"></h3></div><span>Generated from one query result</span></div>
+            <div class="kpi-grid" id="kpiGrid"></div>
+            <div class="dashboard-charts" id="dashboardCharts"></div>
+            <section class="dashboard-data"><h3>Data</h3><div class="table-wrap"><table id="dashboardTable"></table></div></section>
+          </div>
+        </section>
+
+        <section class="agent-dashboard" id="agentDashboard" hidden aria-live="polite">
+          <div class="agent-dashboard-header">
+            <div>
+              <div class="result-meta"><span class="success-dot"></span><span>Dashboard plan executed</span><span class="meta-divider"></span><span id="dashboardQueryCount"></span></div>
+              <h2 id="agentDashboardTitle"></h2>
+              <p id="agentDashboardObjective"></p>
+            </div>
+            <button type="button" class="new-analysis" id="newDashboardButton">New analysis</button>
+          </div>
+          <details class="plan-disclosure">
+            <summary>Dashboard plan and constraints</summary>
+            <div class="plan-content">
+              <ol id="dashboardPlanList"></ol>
+              <div id="unsupportedRequirements" class="unsupported" hidden></div>
+            </div>
+          </details>
+          <section class="persistence-review" id="persistenceReview" hidden>
+            <div class="persistence-review-head">
+              <div><p class="section-kicker">Approval required</p><h3>Persistent analytics plan</h3></div>
+              <span class="persistence-state" id="persistenceState">Pending approval</span>
+            </div>
+            <p>No dbt model or Power BI artifact will be changed until you approve this plan.</p>
+            <div class="transformation-list" id="transformationList"></div>
+            <div class="approval-row" id="approvalRow">
+              <label for="approverInput">Approved by</label>
+              <input id="approverInput" type="text" maxlength="200" placeholder="Your name" autocomplete="name">
+              <button type="button" id="approvePersistenceButton">Approve and deploy</button>
+            </div>
+            <button type="button" class="refresh-button" id="refreshPersistenceButton" hidden>Run production refresh</button>
+            <p class="deployment-message" id="deploymentMessage" hidden></p>
+          </section>
+          <div class="agent-widget-grid" id="agentWidgetGrid"></div>
+        </section>
+      </main>
+      <footer><span>AI Plot</span><span>SQL generation and visualization remain independently governed.</span></footer>
+    </div>
+  </body>
+</html>
