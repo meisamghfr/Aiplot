@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: mart_daily_sales
+    description: Daily sales mart at order date and customer segment grain.
+    data_tests:
+      - unique:
+          column_name: "order_date || '-' || segment"
+    columns:
+      - name: order_date
+        data_tests: [not_null]
+      - name: segment
+        data_tests: [not_null]
+      - name: revenue
+        data_tests: [not_null]
+  - name: mart_retention_cohort
+    description: Cohort activity mart that reprocesses cohorts affected by late-arriving orders.
+    data_tests:
+      - unique:
+          column_name: "cohort_month || '-' || activity_month || '-' || segment"
+    columns:
+      - name: cohort_month
+        data_tests: [not_null]
+      - name: activity_month
+        data_tests: [not_null]
+      - name: active_customers
+        data_tests: [not_null]

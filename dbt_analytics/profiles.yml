@@ -1,0 +1,13 @@
+aiplot_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('AIPLOT_WAREHOUSE_HOST', '127.0.0.1') }}"
+      port: "{{ env_var('AIPLOT_WAREHOUSE_PORT', '5432') | int }}"
+      user: "{{ env_var('AIPLOT_WAREHOUSE_USER') }}"
+      password: "{{ env_var('AIPLOT_WAREHOUSE_PASSWORD', '') }}"
+      dbname: "{{ env_var('AIPLOT_WAREHOUSE_DB', 'aiplot_warehouse') }}"
+      schema: analytics
+      threads: 4
+      connect_timeout: 10

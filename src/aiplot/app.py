@@ -34,6 +34,7 @@ from aiplot.stakeholders.models import (
     StakeholderThread,
 )
 from aiplot.stakeholders.store import StakeholderStore
+from aiplot.stakeholders.tools import pipeline_request, select_tool
 from aiplot.text2sql_client import TextToSQLClient, TextToSQLError
 from aiplot.visualization.models import QueryResult, StrictModel, VisualizationPlan
 from aiplot.visualization.planner import plan_visualization
@@ -278,9 +279,13 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         stakeholder_store.append(thread_id, "user", request.message)
+        tool = select_tool(request.message)
+        effective_request = (
+            pipeline_request(request.message) if tool == "create_pipeline" else request.message
+        )
         analysis = await analyze(
             AnalyzeRequest(
-                question=request.message,
+                question=effective_request,
                 db_id=thread.db_id,
                 provider=thread.provider,
                 model=thread.model,
@@ -299,6 +304,21 @@ def create_app(
             thread=stakeholder_store.get(thread_id),
             assistant_message=assistant,
             analysis=analysis_payload,
+            tool=tool,
+            tool_status=(
+                "failed"
+                if analysis.error_type
+                else (
+                    "awaiting_human_approval"
+                    if analysis.persistence_plan is not None
+                    else "completed"
+                )
+            ),
+            approval_url=(
+                f"/api/persistence/plans/{analysis.persistence_plan.id}/approve"
+                if analysis.persistence_plan is not None
+                else None
+            ),
         )
 
     return app

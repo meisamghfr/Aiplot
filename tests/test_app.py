@@ -157,12 +157,45 @@ def test_stakeholder_thread_persists_governed_analysis(tmp_path: Path, monkeypat
 
     assert response.status_code == 200
     assert response.json()["analysis"]["result"]["accepted_sql"].startswith("SELECT")
+    assert response.json()["tool"] == "text_to_sql"
+    assert response.json()["tool_status"] == "completed"
     assert [item["role"] for item in response.json()["thread"]["messages"]] == [
         "user",
         "assistant",
     ]
     assert client.get("/api/stakeholders/threads").json()[0]["id"] == thread_id
     assert fake.chat_calls == 1
+
+
+def test_pipeline_tool_stops_for_human_approval(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("AIPLOT_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("AIPLOT_DBT_PROJECT_DIR", str(tmp_path / "dbt"))
+    fake = FakeTextToSQLClient(accepted_response())
+    client = TestClient(create_app(fake))  # type: ignore[arg-type]
+    thread = client.post(
+        "/api/stakeholders/threads",
+        json={
+            "stakeholder_name": "Maya",
+            "stakeholder_role": "Head of Growth",
+            "objective": "Operational revenue monitoring",
+            "db_id": "business",
+            "provider": "ollama",
+            "model": "local",
+        },
+    ).json()
+
+    response = client.post(
+        f"/api/stakeholders/threads/{thread['id']}/messages",
+        json={"message": "Create a daily revenue pipeline by segment"},
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["tool"] == "create_pipeline"
+    assert body["tool_status"] == "awaiting_human_approval"
+    assert body["analysis"]["persistence_plan"]["status"] == "pending_approval"
+    assert body["approval_url"].endswith("/approve")
+    assert not (tmp_path / "dbt" / "models").exists()
 
 
 def test_dashboard_mode_performs_multiple_text2sql_calls() -> None:

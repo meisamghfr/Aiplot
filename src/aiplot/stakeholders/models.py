@@ -50,3 +50,6 @@ class StakeholderChatResponse(StrictModel):
     thread: StakeholderThread
     assistant_message: StakeholderMessage
     analysis: dict[str, Any]
+    tool: Literal["text_to_sql", "create_pipeline"]
+    tool_status: Literal["completed", "awaiting_human_approval", "failed"]
+    approval_url: str | None = None

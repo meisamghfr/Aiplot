@@ -18,6 +18,8 @@ It is separate from the authoritative Text-to-SQL service. AI Plot sends natural
 - dbt compile, build, grain, null, metric-range, and reconciliation checks
 - Replaceable dbt and Power BI adapter boundaries
 - Deterministic production refresh with zero LLM calls
+- Included PostgreSQL demo warehouse with daily-sales and retention marts
+- Explicit chatbot tool allowlist: `text_to_sql` and `create_pipeline`
 
 ## Architecture
 
@@ -54,6 +56,7 @@ Chart controls and result-view changes are browser-local. They do not execute an
 git clone https://github.com/meisamghfr/Aiplot.git
 cd Aiplot
 uv sync --dev
+./scripts/bootstrap_warehouse.sh
 ```
 
 Start the Text-to-SQL service separately, then run AI Plot:
@@ -64,6 +67,13 @@ uv run uvicorn aiplot.app:app --reload --host 127.0.0.1 --port 8010
 ```
 
 Open [http://127.0.0.1:8010](http://127.0.0.1:8010).
+
+Configure the separate Text-to-SQL process to expose the warehouse:
+
+```bash
+TEXT2SQL_POSTGRES_DATABASES='{"warehouse":"postgresql://localhost/aiplot_warehouse"}' \
+uv run uvicorn semantic_text2sql.api:create_app --factory --port 8000
+```
 
 Example requests:
 
@@ -93,6 +103,17 @@ Sampling affects only plotted rows. It never changes accepted query results or s
 Each thread stores the stakeholder name, role, decision objective, governed database/model configuration, messages, and analysis responses. Threads survive restarts under `${AIPLOT_STATE_DIR}/stakeholder_threads`.
 
 A message enters the same single-analysis or dashboard route as a direct request. It does not introduce another SQL-generation path.
+
+The conversation runtime chooses only from two tools. `text_to_sql` executes governed read-only analysis. `create_pipeline` prepares a persistent dashboard and transformation plan, then stops with `awaiting_human_approval`. Only the separate approval request can invoke dbt mutation.
+
+## Included PostgreSQL warehouse
+
+`warehouse/bootstrap.sql` creates an isolated `aiplot_warehouse` layout with `raw`, `staging`, and `analytics` schemas. The repeatable demo contains 120 customers and 1,500 orders. The dbt project builds:
+
+- `analytics.mart_daily_sales`
+- `analytics.mart_retention_cohort`
+
+The retention model reprocesses complete cohorts affected by activity arriving inside a 90-day lookback. Run `scripts/bootstrap_warehouse.sh` to create or reload the demo and execute every dbt model and test.
 
 ## Dashboard safeguards
 

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import subprocess
+import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -29,13 +31,22 @@ class DbtAdapter(ABC):
 
 
 class LocalDbtCliAdapter(DbtAdapter):
-    def __init__(self, project_dir: Path, executable: str = "dbt") -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        executable: str = "dbt",
+        profiles_dir: Path | None = None,
+    ) -> None:
         self.project_dir = project_dir.resolve()
         self.executable = executable
+        configured_profiles = os.environ.get("AIPLOT_DBT_PROFILES_DIR")
+        self.profiles_dir = (
+            profiles_dir or (Path(configured_profiles) if configured_profiles else self.project_dir)
+        ).resolve()
         self.catalog = TransformationCatalog(self.project_dir)
 
     async def deploy(self, actions: list[TransformationAction]) -> DbtDeploymentResult:
-        executable = shutil.which(self.executable)
+        executable = self._resolve_executable()
         if executable is None:
             return DbtDeploymentResult(
                 status="failed",
@@ -50,9 +61,9 @@ class LocalDbtCliAdapter(DbtAdapter):
             self.catalog.save(action.spec)
         names = sorted({action.target_model for action in actions})
         commands = [
-            [executable, "compile", "--select", *names],
-            [executable, "build", "--select", *names],
-            [executable, "test", "--select", *names],
+            [executable, "compile", "--profiles-dir", str(self.profiles_dir), "--select", *names],
+            [executable, "build", "--profiles-dir", str(self.profiles_dir), "--select", *names],
+            [executable, "test", "--profiles-dir", str(self.profiles_dir), "--select", *names],
         ]
         results: list[DbtCommandResult] = []
         for command in commands:
@@ -68,12 +79,19 @@ class LocalDbtCliAdapter(DbtAdapter):
         return DbtDeploymentResult(status="succeeded", model_names=names, commands=results)
 
     async def refresh(self, model_names: list[str]) -> DbtDeploymentResult:
-        executable = shutil.which(self.executable)
+        executable = self._resolve_executable()
         if executable is None:
             return DbtDeploymentResult(
                 status="failed", model_names=model_names, error="dbt executable was not found."
             )
-        command = [executable, "build", "--select", " ".join(sorted(set(model_names)))]
+        command = [
+            executable,
+            "build",
+            "--profiles-dir",
+            str(self.profiles_dir),
+            "--select",
+            *sorted(set(model_names)),
+        ]
         result = await asyncio.to_thread(self._run, command)
         return DbtDeploymentResult(
             status="succeeded" if result.return_code == 0 else "failed",
@@ -81,6 +99,13 @@ class LocalDbtCliAdapter(DbtAdapter):
             commands=[result],
             error=None if result.return_code == 0 else "Incremental dbt refresh failed.",
         )
+
+    def _resolve_executable(self) -> str | None:
+        resolved = shutil.which(self.executable)
+        if resolved:
+            return resolved
+        alongside_python = Path(sys.executable).with_name(self.executable)
+        return str(alongside_python) if alongside_python.is_file() else None
 
     def _run(self, command: list[str]) -> DbtCommandResult:
         completed = subprocess.run(
@@ -224,8 +249,11 @@ def _render_sources(spec: TransformationSpec) -> str:
     for source in spec.sources:
         grouped.setdefault(source.source_name, []).append(source.relation_name)
     lines = ["version: 2", "sources:"]
+    source_schema = os.environ.get("AIPLOT_DBT_SOURCE_SCHEMA", "raw")
     for source_name, relations in grouped.items():
-        lines.extend([f"  - name: {source_name}", "    tables:"])
+        lines.extend(
+            [f"  - name: {source_name}", f"    schema: {source_schema}", "    tables:"]
+        )
         lines.extend(f"      - name: {relation}" for relation in sorted(set(relations)))
     return "\n".join(lines) + "\n"
 
