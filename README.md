@@ -1,147 +1,183 @@
 # AI Plot
 
-AI Plot is a separate visualization application for
-`semantic_text2sql_ideal`. It does not generate, validate, or execute SQL.
-It sends a natural-language question to the existing Text-to-SQL API, accepts
-only its validated and executed result, then builds a deterministic Plotly
-chart or compact dashboard from those returned rows.
+AI Plot is a governed analytics application that turns stakeholder conversations into validated analyses, interactive Plotly dashboards, reusable dbt marts, and Power BI refreshes.
+
+It is separate from the authoritative Text-to-SQL service. AI Plot sends natural-language questions upstream and consumes only accepted, executed results. The browser, Dashboard Agent, and persistence planner never author SQL.
+
+## What is implemented
+
+- Persistent stakeholder conversations with role and decision context
+- Single-analysis table, chart, KPI, and dashboard views
+- Bounded multi-widget dashboard planning and execution
+- `ad_hoc` or `persistent` classification
+- Strict, reviewable `TransformationSpec` plans
+- `REUSE_EXISTING`, `EXTEND_EXISTING`, and `CREATE_NEW` mart decisions
+- Human approval before persistent dbt mutation
+- Incremental merge, append, delete-insert, and full-refresh strategies
+- Late-arriving cohort and retention handling
+- dbt compile, build, grain, null, metric-range, and reconciliation checks
+- Replaceable dbt and Power BI adapter boundaries
+- Deterministic production refresh with zero LLM calls
 
 ## Architecture
 
 ```text
-Browser -> Aiplot FastAPI -> semantic_text2sql_ideal /api/chat
-                                -> accepted SQL + executed rows
-        <- validated ChartSpec / DashboardSpec + bounded plotting rows
-Browser -> local Plotly rendering and local view/chart controls
+Stakeholder chat / analysis request
+  -> AI Plot FastAPI
+  -> DashboardSpec + persistence classification
+  -> governed Text-to-SQL natural-language request
+  -> accepted SQL result and executed rows
+  -> deterministic visualization
+
+Persistent dashboard
+  -> TransformationSpec
+  -> human approval
+  -> dbt model reuse, extension, or creation
+  -> dbt compile/build/test
+  -> stable analytics mart
+  -> Power BI semantic model/report publish or refresh
 ```
 
-Changing the result view, chart type, axes, or grouping is browser-local. It
-does not call the Text-to-SQL API again and never changes the accepted SQL.
+Chart controls and result-view changes are browser-local. They do not execute another query or alter accepted SQL.
 
-## Run
+## Requirements
 
-Start the authoritative Text-to-SQL application in its own terminal:
+- Python 3.12 or newer
+- [`uv`](https://docs.astral.sh/uv/)
+- A compatible running Text-to-SQL API
+- PostgreSQL and a valid dbt profile for persistent model execution
+- Optional Power BI workspace, service principal, and PBIX template
 
-```bash
-cd /Users/meisam/Documents/text-to-sql/semantic_text2sql_ideal
-uv sync
-uv run uvicorn semantic_text2sql.api:create_app --factory --host 127.0.0.1 --port 8000
-```
-
-Start Aiplot in a second terminal:
+## Quick start
 
 ```bash
-cd /Users/meisam/Documents/Aiplot
+git clone https://github.com/meisamghfr/Aiplot.git
+cd Aiplot
 uv sync --dev
-TEXT2SQL_API_URL=http://127.0.0.1:8000 uv run uvicorn aiplot.app:app --reload --port 8010
 ```
 
-Open `http://127.0.0.1:8010`, choose one of the databases and configured
-models reported by Text-to-SQL, then ask a question appropriate to that data.
-For a revenue database, an example is: `Show monthly revenue by customer segment.`
-
-## Environment
-
-- `TEXT2SQL_API_URL`: Text-to-SQL origin; default `http://127.0.0.1:8000`
-- `AIPLOT_MAX_PLOT_ROWS`: maximum rows sent to Plotly; default `300`. Sampling
-  affects only the chart and never alters SQL or the result table.
-- `AIPLOT_TEXT2SQL_TIMEOUT_SECONDS`: upstream request timeout; default `180`
-- `AIPLOT_DBT_PROJECT_DIR`: dbt project/catalog directory; default `dbt_analytics`
-- `AIPLOT_STATE_DIR`: plan and deployment records; default `.aiplot`
-- `AIPLOT_POWERBI_ARTIFACT_DIR`: fallback Power BI manifests; default
-  `powerbi_artifacts`
-
-## Tests
+Start the Text-to-SQL service separately, then run AI Plot:
 
 ```bash
-uv run pytest
-uv run ruff check .
-uv run mypy
+TEXT2SQL_API_URL=http://127.0.0.1:8000 \
+uv run uvicorn aiplot.app:app --reload --host 127.0.0.1 --port 8010
 ```
 
-Plotly.js and the interface fonts are loaded from public CDNs. An offline
-deployment should vendor those static assets. The first version supports one
-accepted result at a time, up to three dashboard charts, four KPIs, and a
-500-row result table. It intentionally does not offer arbitrary SQL input,
-database credentials, unrestricted dashboard composition, or LLM-authored
-JavaScript.
+Open [http://127.0.0.1:8010](http://127.0.0.1:8010).
 
-## Agent-driven dashboards
+Example requests:
 
-Requests containing an explicit dashboard intent follow a separate bounded
-path. Aiplot retrieves compact analytical capabilities from
-`GET /api/databases/{db_id}/analytics-capabilities`, selects only advertised
-metrics, produces a strict dashboard plan, converts each widget into a natural
-language question, and sends each unique question through Text-to-SQL.
+```text
+Show monthly revenue by customer segment.
+Build a customer retention cohort dashboard.
+Create a production revenue dashboard that refreshes daily.
+```
 
-Dashboard planning is currently deterministic. It never emits SQL, code, or
-Plotly configuration. Explicit supported metrics and chart types in the user
-request take priority over automatic choices. Unsupported requested KPIs are
-reported in the dashboard plan and are not silently substituted.
+## Configuration
 
-Each dashboard is limited to 10 widgets, including at most 6 KPIs and 6 charts.
-Execution is limited to 8 unique Text-to-SQL calls with at most 3 running
-concurrently. A failed widget remains visible as unavailable while successful
-widgets continue rendering. Query provenance is available under each widget's
-details section.
+`.env.example` documents the supported settings. AI Plot does not automatically load `.env` files.
 
-## Persistent analytics
+| Variable | Purpose | Default |
+|---|---|---|
+| `TEXT2SQL_API_URL` | Authoritative Text-to-SQL origin | `http://127.0.0.1:8000` |
+| `AIPLOT_MAX_PLOT_ROWS` | Maximum rows passed to Plotly | `300` |
+| `AIPLOT_TEXT2SQL_TIMEOUT_SECONDS` | Upstream timeout | `180` |
+| `AIPLOT_DBT_PROJECT_DIR` | dbt project and transformation catalog | `dbt_analytics` |
+| `AIPLOT_STATE_DIR` | Conversations, plans, and deployment state | `.aiplot` |
+| `AIPLOT_POWERBI_ARTIFACT_DIR` | Fallback Power BI manifests | `powerbi_artifacts` |
 
-Dashboard requests containing operational language such as `refresh daily`,
-`weekly monitoring`, `production dashboard`, or `ongoing dashboard` are
-classified as persistent. A normal dashboard remains ad hoc.
+Sampling affects only plotted rows. It never changes accepted query results or stored SQL provenance.
 
-Persistent requests return a strict, reviewable transformation plan. They do
-not immediately create or modify dbt models. The browser exposes a separate
-approval action backed by:
+## Stakeholder conversations
+
+Each thread stores the stakeholder name, role, decision objective, governed database/model configuration, messages, and analysis responses. Threads survive restarts under `${AIPLOT_STATE_DIR}/stakeholder_threads`.
+
+A message enters the same single-analysis or dashboard route as a direct request. It does not introduce another SQL-generation path.
+
+## Dashboard safeguards
+
+- Maximum 10 widgets, including at most 6 KPIs and 6 charts
+- Maximum 8 unique Text-to-SQL requests and 3 concurrent calls
+- Unsupported requirements are reported rather than silently substituted
+- Failed widgets remain visible while successful widgets continue rendering
+- Accepted SQL and execution provenance remain inspectable per widget
+
+## Persistent analytics and dbt
+
+Language such as `refresh daily`, `weekly monitoring`, `production dashboard`, or `ongoing dashboard` classifies a dashboard as persistent. Normal analysis remains ad hoc.
+
+Persistent requests produce a strict `TransformationSpec` containing model name, sources, grain, dimensions, metrics, materialization, incremental strategy, unique key, incremental column, late-arriving policy, and tests.
+
+Before mutation, the planner compares the specification with the catalog and chooses `REUSE_EXISTING`, `EXTEND_EXISTING`, or `CREATE_NEW`. Compatible widgets share a mart; AI Plot does not create one model per widget.
+
+No model is written until a person approves the plan:
 
 ```text
 POST /api/persistence/plans/{plan_id}/approve
 ```
 
-Only an explicitly approved plan reaches the configured `DbtAdapter`. The
-default adapter uses the local dbt CLI, creates or updates grouped analytics
-marts, then runs `dbt compile`, `dbt build`, and `dbt test`. It generates
-not-null, unique-grain, accepted-range, and source-reconciliation tests.
+The default `LocalDbtCliAdapter` renders approved models and executes `dbt compile`, `dbt build`, and `dbt test`. Tests cover nulls, unique grain, metric ranges, and source reconciliation.
 
-The planner selects `REUSE_EXISTING`, `EXTEND_EXISTING`, or `CREATE_NEW` by
-comparing sources, grain, dimensions, and metrics with the transformation
-catalog. Widgets using the same source and grain share a mart instead of
-producing one model per widget.
+Standard incremental marts use bounded-lookback append or merge behavior. Cohort and retention marts use merge or delete-insert and recompute cohorts affected by late-arriving activity. Sources without safe incremental keys fall back to table/full-refresh behavior.
 
-Standard incremental marts use merge and a bounded lookback. Retention/cohort
-marts require delete-insert or merge behavior and recompute the complete
-history of cohorts affected by late-arriving activity inside the lookback.
-Sources without a usable incremental/time key use table/full-refresh behavior.
-
-After successful dbt validation, the replaceable `PowerBIAdapter` receives
-stable mart names. Without a live Power BI MCP connection, the default adapter
-writes an MCP-ready semantic-model/report manifest under `powerbi_artifacts/`;
-it never points Power BI at raw generated SQL.
-
-Production refresh is deterministic:
+Production refresh requires no planning or LLM call:
 
 ```text
+new data -> dbt incremental build -> analytics mart -> Power BI refresh
 POST /api/persistence/plans/{plan_id}/refresh
 ```
 
-It performs only `dbt build` followed by Power BI refresh and reports zero LLM
-calls. Scheduling is deliberately out of scope. The local adapter requires a
-working `dbt` executable and profile; actual Power BI publication requires a
-live MCP-backed `PowerBIAdapter` implementation.
-## Stakeholder conversations
+Scheduling and Airflow are intentionally out of scope.
 
-The web application now supports persistent stakeholder threads. Each thread records the stakeholder role, decision objective, governed database/model configuration, messages, and the complete analysis response. Messages still enter the existing single-analysis or dashboard route; the browser never authors SQL.
+## Power BI
 
-Thread state is stored under `${AIPLOT_STATE_DIR}/stakeholder_threads` and survives application restarts.
+Both integrations implement `PowerBIAdapter`:
 
-## dbt and Power BI
+- `PowerBIRestAdapter` uses a service principal to import or replace a PBIX template, records its semantic-model ID, and requests dataset refreshes.
+- `PowerBIManifestAdapter` writes a portable semantic-model/report manifest when live configuration is unavailable.
 
-`dbt-core` and `dbt-postgres` are project dependencies, so `uv sync --dev` installs a local `dbt` CLI used by the existing replaceable `DbtAdapter`.
+For live service integration, configure:
 
-Power BI has two modes behind the same adapter boundary:
+```text
+POWERBI_TENANT_ID
+POWERBI_CLIENT_ID
+POWERBI_CLIENT_SECRET
+POWERBI_WORKSPACE_ID
+POWERBI_PBIX_TEMPLATE_PATH
+```
 
-- With all `POWERBI_*` variables in `.env.example` configured, Aiplot authenticates with a service principal, imports/overwrites the configured PBIX template in the workspace, captures its semantic-model id, and requests refreshes after successful dbt builds.
-- Without live credentials or a PBIX template, it writes the existing portable manifest without contacting Power BI.
+The PBIX template must connect to stable analytics marts. Credentials remain server-side. Power BI Desktop authoring requires Windows; macOS execution uses the Power BI service API.
 
-The PBIX template must already connect to the stable analytics mart. Credentials stay server-side. Power BI Desktop report authoring is a Windows workflow; on macOS, publishing and refresh are handled through the Power BI service API.
+## Development and verification
+
+```bash
+uv run pytest
+uv run ruff check src tests
+uv run mypy src/aiplot
+deno check web/app.js
+uv run dbt --version
+```
+
+Verified baseline: **44 tests passing**, Ruff clean, strict mypy clean, frontend JavaScript validation clean, and dbt CLI available.
+
+## Current limitations
+
+- Text-to-SQL and configured databases run separately.
+- Live dbt execution requires a profile and reachable PostgreSQL target.
+- Live Power BI publication requires tenant credentials, permissions, and a PBIX template.
+- Plotly.js and interface fonts load from public CDNs.
+- Conversation state uses atomic local JSON rather than a shared multi-instance database.
+- Production scheduling, Airflow, and Windows Power BI Desktop authoring are not included.
+
+## Security boundaries
+
+- No arbitrary SQL input in the browser
+- No browser-side database or Power BI credentials
+- No Dashboard Agent-generated SQL
+- No persistent mutation before explicit approval
+- No LLM dependency during production refresh
+- Runtime state, environment files, virtual environments, and build artifacts are excluded from Git
+
+## License
+
+No open-source license has been selected. Until one is added, the repository remains all rights reserved.
